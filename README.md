@@ -4,7 +4,7 @@
     <img src="./figures/ant-bailing.png" width="100"/>
 <p>
 
-<p align="center">📑 <a href="">Technical Report</a>｜📖<a href="https://xqacmer.github.io/Ming-Unitok-Audio.github.io/">Project Page</a> ｜🤗 <a href="https://huggingface.co/inclusionAI/Ming-UniAudio-16A3B">Hugging Face</a>｜ 🤖 <a href="https://modelscope.cn/models/inclusionAI/Ming-UniAudio-16A3B">ModelScope</a>
+<p align="center">📖<a href="https://xqacmer.github.io/Ming-Unitok-Audio.github.io/">Project Page</a> ｜🤗 <a href="https://huggingface.co/inclusionAI/Ming-UniAudio-16A3B">Hugging Face</a>｜ 🤖 <a href="https://modelscope.cn/models/inclusionAI/Ming-UniAudio-16A3B">ModelScope</a>
 
 
 
