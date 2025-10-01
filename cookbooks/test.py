@@ -126,7 +126,7 @@ class MingAudio:
         return edited_speech, edited_text
 
 if __name__ == "__main__":
-    model = MingAudio("inclusionAI/Ming-UniAudio-16A3B")
+    model = MingAudio("inclusionAI/Ming-UniAudio-16B-A3B")
     
     # ASR
     messages = [
@@ -155,7 +155,7 @@ if __name__ == "__main__":
     )
 
     # Edit
-    # model = MingAudio("inclusionAI/Ming-UniAudio-16A3B-Edit")
+    # model = MingAudio("inclusionAI/Ming-UniAudio-16B-A3B-Edit")
     messages = [
         {
             "role": "HUMAN",

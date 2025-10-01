@@ -4,7 +4,7 @@
     <img src="./figures/ant-bailing.png" width="100"/>
 <p>
 
-<p align="center">📖<a href="https://xqacmer.github.io/Ming-Unitok-Audio.github.io/">Project Page</a> ｜🤗 <a href="https://huggingface.co/inclusionAI/Ming-UniAudio-16A3B">Hugging Face</a>｜ 🤖 <a href="https://modelscope.cn/models/inclusionAI/Ming-UniAudio-16A3B">ModelScope</a>
+<p align="center">📖<a href="https://xqacmer.github.io/Ming-Unitok-Audio.github.io/">Project Page</a> ｜🤗 <a href="https://huggingface.co/inclusionAI/Ming-UniAudio-16B-A3B">Hugging Face</a>｜ 🤖 <a href="https://modelscope.cn/models/inclusionAI/Ming-UniAudio-16B-A3B">ModelScope</a>
 
 
 
@@ -13,8 +13,8 @@
 Ming-UniAudio is a novel framework that unifies speech understanding, generation, and editing. Its core is a unified continuous speech tokenizer that effectively unifies semantic and acoustic features within an end-to-end model. We developed a speech language model that strikes a balance between generation and understanding capabilities based on the unified continuous audio tokenizer. Leveraging this foundational model, which exhibits robust performance in both domains, we further trained a dedicated speech editing model built upon [Ming-Lite-Omni](https://github.com/inclusionAI/Ming). Crucially, Ming-UniAudio is the first to enable universal, free-form speech editing guided solely by natural language instructions, handling complex semantic and acoustic modifications without manual region specification.
 
 - 🔥 First unified continuous speech tokenizer for both understanding and generation tasks: [MingTok-Audio](https://github.com/inclusionAI/MingTok-Audio)
-- 🔥 First Speech LLM  with unifed continuous tokenizer for both understanding and generation: [Ming-UniAudio](https://huggingface.co/inclusionAI/Ming-UniAudio-16A3B)
-- 🔥 First universal free-form speech editing model for various semantic and acoustic editing task with any temporal regime: [Ming-UniAudio-Edit](https://huggingface.co/inclusionAI/Ming-UniAudio-16A3B-Edit)
+- 🔥 First Speech LLM  with unifed continuous tokenizer for both understanding and generation: [Ming-UniAudio](https://huggingface.co/inclusionAI/Ming-UniAudio-16B-A3B)
+- 🔥 First universal free-form speech editing model for various semantic and acoustic editing task with any temporal regime: [Ming-UniAudio-Edit](https://huggingface.co/inclusionAI/Ming-UniAudio-16B-A3B-Edit)
 - 🔥 First benchmark for free-form speech editing: [Ming-Freeform-Audio-Edit-Benchmark](https://huggingface.co/datasets/inclusionAI/Ming-Freeform-Audio-Edit-Benchmark)
 
 <p align="center">
@@ -203,7 +203,7 @@ In various benchmark tests, Ming-UniAudio demonstrates highly competitive result
       <td>31.73</td>
     </tr>
     <tr>
-      <td><strong>Ming-UniAudio-16A3B(ours)</strong></td>
+      <td><strong>Ming-UniAudio-16B-A3B(ours)</strong></td>
       <td>2.84</td>
       <td>1.62</td>
       <td><strong>9.80</strong></td>
@@ -291,7 +291,7 @@ In various benchmark tests, Ming-UniAudio demonstrates highly competitive result
       <td><strong>2.40</strong> | 14.06 | 13.17</td>
     </tr>
     <tr>
-      <td><strong>Ming-UniAudio-16A3B-Edit(ours)</strong></td>
+      <td><strong>Ming-UniAudio-16B-A3B-Edit(ours)</strong></td>
       <td>4.00 | <strong>3.56</strong> | <strong>3.69</strong></td>
       <td>5.34 | <strong>8.73</strong> | <strong>2.53</strong></td>
       <td><strong>1.58</strong> | <strong>5.98</strong> | 2.40</td>
@@ -352,7 +352,7 @@ In various benchmark tests, Ming-UniAudio demonstrates highly competitive result
       <td align="center">0.51</td>
     </tr>
     <tr>
-      <td align="left"><strong>Ming-UniAudio-16A3B(ours)</strong></td>
+      <td align="left"><strong>Ming-UniAudio-16B-A3B(ours)</strong></td>
       <td align="center"><b>0.95</b></td>
       <td align="center">0.70</td>
       <td align="center">1.85</td>
@@ -379,7 +379,7 @@ In various benchmark tests, Ming-UniAudio demonstrates highly competitive result
         <strong>Deletion-basic<br>
         <strong>Deletion</strong>
       </th>
-      <td>Ming-UniAudio-16A3B-Edit</td>
+      <td>Ming-UniAudio-16B-A3B-Edit</td>
       <td align="center">
         <strong>WER(%) zh | en</strong><br>
         <hr style="height: 1px; background-color: black; border: none; margin: 2px 0;">
@@ -410,7 +410,7 @@ In various benchmark tests, Ming-UniAudio demonstrates highly competitive result
         <strong>Insertion-basic<br>
         <strong>Insertion</strong>
       </th>
-      <td>Ming-UniAudio-16A3B-Edit</td>
+      <td>Ming-UniAudio-16B-A3B-Edit</td>
       <td align="center">
         <strong>WER(%) zh | en</strong><br>
         <hr style="height: 1px; background-color: black; border: none; margin: 2px 0;">
@@ -441,7 +441,7 @@ In various benchmark tests, Ming-UniAudio demonstrates highly competitive result
         <strong>Substitution-basic<br>
         <strong>Substitution</strong>
       </th>
-      <td>Ming-UniAudio-16A3B-Edit</td>
+      <td>Ming-UniAudio-16B-A3B-Edit</td>
       <td align="center">
       <strong>WER(%) zh | en</strong><br>
         <hr style="height: 1px; background-color: black; border: none; margin: 2px 0;">
@@ -471,7 +471,7 @@ In various benchmark tests, Ming-UniAudio demonstrates highly competitive result
       <th>
         <strong>Dialect Conversion<br>
       </th>
-      <td>Ming-UniAudio-16A3B-Edit</td>
+      <td>Ming-UniAudio-16B-A3B-Edit</td>
       <td align="center">
       <strong>WER(%)</strong><br>
         <hr style="height: 1px; background-color: black; border: none; margin: 2px 0;">
@@ -495,7 +495,7 @@ In various benchmark tests, Ming-UniAudio demonstrates highly competitive result
       <th>
         <strong>Speed changing<br>
       </th>
-      <td>Ming-UniAudio-16A3B-Edit</td>
+      <td>Ming-UniAudio-16B-A3B-Edit</td>
       <td align="center">
       <strong>WER(%) zh | en</strong><br>
         <hr style="height: 1px; background-color: black; border: none; margin: 2px 0;">
@@ -519,7 +519,7 @@ In various benchmark tests, Ming-UniAudio demonstrates highly competitive result
       <th>
         <strong>Pitch changing<br>
       </th>
-      <td>Ming-UniAudio-16A3B-Edit</td>
+      <td>Ming-UniAudio-16B-A3B-Edit</td>
       <td align="center">
       <strong>WER(%) zh | en</strong><br>
         <hr style="height: 1px; background-color: black; border: none; margin: 2px 0;">
@@ -541,7 +541,7 @@ In various benchmark tests, Ming-UniAudio demonstrates highly competitive result
       <th>
         <strong>Volume changing<br>
       </th>
-      <td>Ming-UniAudio-16A3B-Edit</td>
+      <td>Ming-UniAudio-16B-A3B-Edit</td>
       <td align="center">
       <strong>WER(%) zh | en</strong><br>
         <hr style="height: 1px; background-color: black; border: none; margin: 2px 0;">
@@ -626,7 +626,7 @@ In various benchmark tests, Ming-UniAudio demonstrates highly competitive result
       <td>4.10</td>
     </tr>
     <tr>
-      <td><strong>Ming-UniAudio-16A3B-Edit(ours)</strong></td>
+      <td><strong>Ming-UniAudio-16B-A3B-Edit(ours)</strong></td>
       <td>3.26</td>
       <td>3.59</td>
       <td>3.97</td>
@@ -645,15 +645,15 @@ You can download our latest model and Benchmark from both Huggingface and ModelS
 |**Type**| **Model**              |   **Input modality**   | **Oput modality** |                                                                         **Download**                                                                         |
 |:-----------------------|:-----------------------|:----------------------:| :---------------: |:------------------------------------------------------------------------------------------------------------------------------------------------------------:|
 Tokenizer| MingTok-Audio | audio | audio  | [🤗 HuggingFace](https://huggingface.co/inclusionAI/MingTok-Audio) <br>[🤖 ModelScope](https://modelscope.cn/models/inclusionAI/MingTok-Audio) |
-SpeechLLM| Ming-UniAudio-16A3B     | audio | audio  | [🤗 HuggingFace](https://huggingface.co/inclusionAI/Ming-UniAudio-16A3B) <br>[🤖 ModelScope](https://modelscope.cn/models/inclusionAI/Ming-UniAudio-16A3B) |
-SpeechLLM| Ming-UniAudio-16A3B-Edit     | text, audio | text, audio  | [🤗 HuggingFace](https://huggingface.co/inclusionAI/Ming-UniAudio-16A3B-Edit) <br>[🤖 ModelScope](https://modelscope.cn/models/inclusionAI/Ming-UniAudio-16A3B-Edit) |
+SpeechLLM| Ming-UniAudio-16B-A3B     | audio | audio  | [🤗 HuggingFace](https://huggingface.co/inclusionAI/Ming-UniAudio-16B-A3B) <br>[🤖 ModelScope](https://modelscope.cn/models/inclusionAI/Ming-UniAudio-16B-A3B) |
+SpeechLLM| Ming-UniAudio-16B-A3B-Edit     | text, audio | text, audio  | [🤗 HuggingFace](https://huggingface.co/inclusionAI/Ming-UniAudio-16B-A3B-Edit) <br>[🤖 ModelScope](https://modelscope.cn/models/inclusionAI/Ming-UniAudio-16B-A3B-Edit) |
 Benchmark| Ming-Freeform-Audio-Edit     | - | -  | [🤗 HuggingFace](https://huggingface.co/datasets/inclusionAI/Ming-Freeform-Audio-Edit-Benchmark) <br>[🤖 ModelScope](https://modelscope.cn/datasets/inclusionAI/Ming-Freeform-Audio-Edit-Benchmark) <br>[Eval tools](https://github.com/inclusionAI/Ming-Freeform-Audio-Edit)|
 </div>
-If you're in mainland China, we strongly recommend you to download our model from 🤖 <a href="https://modelscope.cn/models/inclusionAI/Ming-UniAudio-16A3B">ModelScope</a>.
+If you're in mainland China, we strongly recommend you to download our model from 🤖 <a href="https://modelscope.cn/models/inclusionAI/Ming-UniAudio-16B-A3B">ModelScope</a>.
 
 ```
 pip install modelscope
-modelscope download --model inclusionAI/Ming-UniAudio-16A3B --local_dir inclusionAI/Ming-UniAudio-16A3B  --revision master
+modelscope download --model inclusionAI/Ming-UniAudio-16B-A3B --local_dir inclusionAI/Ming-UniAudio-16B-A3B  --revision master
 ```
 
 Note: This download process will take several minutes to several hours, depending on your network conditions.
@@ -708,7 +708,7 @@ Download our model following `Model & Benchmark Downloads`
 
 ```shell
 mkdir inclusionAI 
-ln -s /path/to/inclusionAI/Ming-UniAudio-16A3B inclusionAI/Ming-UniAudio-16A3B
+ln -s /path/to/inclusionAI/Ming-UniAudio-16B-A3B inclusionAI/Ming-UniAudio-16B-A3B
 ```
 
 Step 3 - Enter the code directory, you can refer to the following codes to run the Ming-UniAudio model.
@@ -840,7 +840,7 @@ class MingAudio:
         return edited_speech, edited_text
 
 if __name__ == "__main__":
-    model = MingAudio("inclusionAI/Ming-UniAudio-16A3B")
+    model = MingAudio("inclusionAI/Ming-UniAudio-16B-A3B")
     
     # ASR
     messages = [
@@ -868,7 +868,7 @@ if __name__ == "__main__":
     )
 
     # Edit
-    # model = MingAudio("inclusionAI/Ming-UniAudio-16A3B-Edit")
+    # model = MingAudio("inclusionAI/Ming-UniAudio-16B-A3B-Edit")
     messages = [
         {
             "role": "HUMAN",
