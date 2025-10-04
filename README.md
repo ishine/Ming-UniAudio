@@ -33,7 +33,7 @@ Ming-UniAudio features key optimizations as follows, compared to other audio-ass
     <img src="./figures/uniaudio-tokenizer.png" width="600"/>
 <p>
 
-- **Unified Speech Language Model for Generation and Understanding**: We pretrain an end-to-end unified speech language model with a single LLM backbone for both understanding and generation tasks, enhanced with a Diffusion Head to ensure high-fidelity speech synthesis.
+- **Unified Speech Language Model for Generation and Understanding**: We pretrain an end-to-end unified speech language model with a single LLM backbone for both understanding and generation tasks, enhanced with a Diffusion Head to ensure high-quality speech synthesis.
 - **Instruction-Guided Free-Form Speech Editing**: We introduce the first instruction-guided, free-form speech editing framework that supports comprehensive semantic and acoustic edits without requiring explicit edit regions, along with [Ming-Freeform-Audio-Edit](https://github.com/inclusionAI/Ming-Freeform-Audio-Edit), the first open-source evaluation set for such tasks.
 
 
