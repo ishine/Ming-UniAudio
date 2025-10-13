@@ -1,12 +1,19 @@
 import warnings
 import torch
 from transformers import AutoProcessor
+import os
+import sys
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
 
 from modeling_bailingmm import BailingMMNativeForConditionalGeneration
-
 import random
 import numpy as np
 from loguru import logger
+from sentence_manager.sentence_manager import SentenceNormalizer
+import re
+import yaml
 
 def seed_everything(seed=1895):
     random.seed(seed)
@@ -32,7 +39,30 @@ class MingAudio:
         self.tokenizer = self.processor.tokenizer
         self.sample_rate = self.processor.audio_processor.sample_rate
         self.patch_size = self.processor.audio_processor.patch_size
+        self.normalizer = self.init_tn_normalizer(tokenizer=self.tokenizer)
+
+    def init_tn_normalizer(self, config_file_path=None, tokenizer=None):
+        if config_file_path is None:
+            default_config_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 
+                "sentence_manager/default_config.yaml"
+            )
+            config_file_path = default_config_path
         
+        with open(config_file_path, 'r') as f:
+            self.sentence_manager_config = yaml.safe_load(f)
+        
+        if "split_token" not in self.sentence_manager_config:
+            self.sentence_manager_config["split_token"] = []
+        
+        assert isinstance(self.sentence_manager_config["split_token"], list)
+        if tokenizer is not None:
+            self.sentence_manager_config["split_token"].append(re.escape(tokenizer.eos_token))
+
+        normalizer = SentenceNormalizer(self.sentence_manager_config.get("text_norm", {}))
+        
+        return normalizer
+
     def speech_understanding(self, messages, lang=None):
         text = self.processor.apply_chat_template(messages, add_generation_prompt=True)
         image_inputs, video_inputs, audio_inputs = self.processor.process_vision_info(messages)
@@ -77,6 +107,7 @@ class MingAudio:
         lang='zh',
         output_wav_path='out.wav'
     ):
+        text = self.normalizer.normalize(text)
         waveform = self.model.generate_tts(
             text=text,
             prompt_wav_path=prompt_wav_path,
@@ -127,7 +158,6 @@ class MingAudio:
 
 if __name__ == "__main__":
     model = MingAudio("inclusionAI/Ming-UniAudio-16B-A3B")
-    
     # ASR
     messages = [
         {
