@@ -14,6 +14,9 @@ class FlowLoss(nn.Module):
             model=DiT(in_channels=z_channels, llm_cond_dim=llm_cond_dim, **kwargs)
         )
 
+    def forward(self, cond, target, latent_history, mask, patch_size):
+        return self.cfm(cond=cond, target=target, latent_history=latent_history, mask=mask, patch_size=patch_size)
+
     def sample(self, z, latent_history, cfg=1.0, patch_size=1):
         # diffusion loss sampling
         noise = torch.randn(z.shape[0], self.z_channels, latent_history.shape[1]).cuda()

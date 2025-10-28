@@ -901,6 +901,7 @@ def encode_audio_segments(
     if audio_feats_seg.shape[1] % patch_size != 0: #截取真实vae_latent的多余部分
         cut_len = audio_feats_seg.shape[1] % patch_size
         audio_feats_seg = audio_feats_seg[:, :-cut_len, :]
+        z_latents = z_latents[:, :-cut_len, :]
 
     bsz = audio_feats_seg.size(0)
     audio_feats_seg = audio_feats_seg.reshape(-1, patch_size, audio_feats_seg.size(-1))
@@ -908,7 +909,7 @@ def encode_audio_segments(
     audio_feats_seg_proj = audio_feats_seg_proj.reshape(bsz, -1, audio_feats_seg_proj.size(-1))  # [B, patch_num ,d]
     audio_feat_seg_lengths = audio_feat_seg_lengths // patch_size
 
-    return audio_feats_seg_proj, audio_feat_seg_lengths
+    return audio_feats_seg_proj, audio_feat_seg_lengths, z_latents
 
 def patch_continuous_features(
     input_embeddings: torch.Tensor,

@@ -1,4 +1,5 @@
 import warnings
+from peft import PeftModel
 import torch
 from transformers import AutoProcessor
 import os
@@ -28,13 +29,20 @@ seed_everything()
 warnings.filterwarnings("ignore")
 
 class MingAudio:
-    def __init__(self, model_path, device="cuda:0"):
+    def __init__(self, model_path, lora_path=None, device="cuda:0", use_grouped_gemm=False):
         self.device = device
         self.model = BailingMMNativeForConditionalGeneration.from_pretrained(
             model_path,
             torch_dtype=torch.bfloat16,
             low_cpu_mem_usage=True,
-        ).eval().to(torch.bfloat16).to(self.device)
+        ).to(self.device)
+
+        if use_grouped_gemm and not self.model.config.llm_config.use_grouped_gemm:
+            self.model.model.fuse_experts()
+
+        if lora_path is not None:
+            self.model = PeftModel.from_pretrained(self.model, lora_path)
+        self.model = self.model.eval().to(torch.bfloat16).to(self.device)
         self.processor = AutoProcessor.from_pretrained(".", trust_remote_code=True)
         self.tokenizer = self.processor.tokenizer
         self.sample_rate = self.processor.audio_processor.sample_rate
@@ -43,10 +51,7 @@ class MingAudio:
 
     def init_tn_normalizer(self, config_file_path=None, tokenizer=None):
         if config_file_path is None:
-            default_config_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 
-                "sentence_manager/default_config.yaml"
-            )
+            default_config_path = "sentence_manager/default_config.yaml"
             config_file_path = default_config_path
         
         with open(config_file_path, 'r') as f:
@@ -185,7 +190,8 @@ if __name__ == "__main__":
     )
 
     # Edit
-    # model = MingAudio("inclusionAI/Ming-UniAudio-16B-A3B-Edit")
+    del model
+    model = MingAudio("inclusionAI/Ming-UniAudio-16B-A3B-Edit")
     messages = [
         {
             "role": "HUMAN",

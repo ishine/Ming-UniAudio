@@ -31,6 +31,7 @@ from modeling_utils import (
 
 
 from audio_tokenizer.modeling_audio_vae import AudioVAE
+from sft.utils import StopLossOne, length2attention_mask
 
 logger = logging.get_logger(__name__)
 
@@ -69,6 +70,9 @@ class BailingMMCausalLMOutputWithPast(ModelOutput):
     """
 
     loss: Optional[torch.FloatTensor] = None
+    flow_loss: Optional[torch.FloatTensor] = None
+    stop_loss: Optional[torch.FloatTensor] = None
+    stop_loss_likely: Optional[dict] = None
     logits: torch.FloatTensor = None
     past_key_values: Optional[List[torch.FloatTensor]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
@@ -85,7 +89,7 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
     def __init__(
         self,
         config: BailingMMConfig,
-        empty_load=False, 
+        empty_load=False
     ):
         super().__init__(config)
         self.config: BailingMMConfig = config
@@ -93,8 +97,10 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
         self.model = None
         if empty_load:
             return
-        
+
         self.llm_dytpe = torch.bfloat16
+        self.__check_deps()
+
         self.model = BailingMoeForCausalLM(self.config.llm_config)
         self.audio = AudioVAE(self.config.audio_tokenizer_config)
         self.audio_downsampler_args = {}
@@ -109,9 +115,21 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
             **self.config.ditar_config
         )
         self.stop_head = nn.Linear(self.model.config.hidden_size, 2, bias=True)
-
+        self.stop_loss_func = StopLossOne()
+        self.patch_size = 5
         self.post_init()
-        
+
+    def __check_deps(self):
+        if self.config.llm_config.use_grouped_gemm:
+            # https://github.com/fanshiqing/grouped_gemm
+            import importlib.util
+
+            if importlib.util.find_spec("grouped_gemm") is None:
+                raise ImportError(
+                    "Please install grouped_gemm to use use_grouped_gemm=True. "
+                    "You can install it with `pip install git+https://github.com/fanshiqing/grouped_gemm@main`"
+                )
+
     def get_rope_index(
         self,
         input_ids,
@@ -274,14 +292,14 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
         return position_ids, mrope_position_deltas
 
     def extract_audio_feature(self, waveform, waveform_length):
-        audio_embeds, audio_embeds_lengths = encode_audio_segments(
+        audio_embeds, audio_embeds_lengths, latents = encode_audio_segments(
             encoder=self.audio,
             proj_layer=self.linear_proj_audio,
             waveforms=waveform,
             waveforms_lengths=waveform_length,
         )
 
-        return audio_embeds.to(waveform.dtype), audio_embeds_lengths
+        return audio_embeds.to(waveform.dtype), audio_embeds_lengths, latents.to(waveform.dtype)
 
     def prompt_wrap_audio(
         self,
@@ -336,91 +354,102 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
         position_ids: Optional[torch.LongTensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        pixel_values: Optional[torch.FloatTensor] = None,
-        pixel_values_videos: Optional[torch.FloatTensor] = None,
-        audio_feats: Optional[torch.FloatTensor] = None,
-        image_grid_thw: Optional[torch.LongTensor] = None,
-        video_grid_thw: Optional[torch.LongTensor] = None,
-        audio_feats_lengths: Optional[torch.LongTensor] = None,
-        audio_placeholder_loc_lens: Optional[torch.LongTensor] = None,
+        stop_label: Optional[torch.LongTensor] = None,
+        waveform: Optional[torch.FloatTensor] = None,
+        waveform_length: Optional[torch.FloatTensor] = None,
+        placeholder_loc_lens: Optional[torch.LongTensor] = None,
         past_key_values: Optional[List[torch.Tensor]] = None,
-        use_whisper_encoder: bool = False,
+        **kwargs
     ) -> Union[Tuple, BailingMMCausalLMOutputWithPast]:
-        output_attentions = (
-            output_attentions if output_attentions is not None else self.config.output_attentions
-        )
-        output_hidden_states = (
-            output_hidden_states
-            if output_hidden_states is not None
-            else self.config.output_hidden_states
-        )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if (input_ids is None) ^ (inputs_embeds is not None):
             raise ValueError(
                 "You cannot specify both input_ids and inputs_embeds at the same time, and must specify either one"
             )
 
+        # Obtain tokenizer unified feature and latent
+        audio_embeds, audio_embeds_lengths, latents = self.extract_audio_feature(
+            waveform, waveform_length
+        )
+
+        # Insert unified feature to input embedding
+        words_embeddings, audio_mask = self.prompt_wrap_navit(
+            input_ids.clip(0, self.model.get_input_embeddings().weight.shape[0] - 1),
+            audio_embeds,
+            audio_embeds_lengths,
+            placeholder_loc_lens,
+            None,  # noqa
+        )
+        audio_embeds_lengths = audio_embeds_lengths.squeeze(-1)  # [B]
+        
+        # Obtain position id
         if (
-            pixel_values is not None or pixel_values_videos is not None or audio_feats is not None
-        ) and inputs_embeds is not None:
-            raise ValueError(
-                "You cannot specify both pixel_values/pixel_values_videos/pixel_values_audios and inputs_embeds at the same time, and must specify either one"
+            self.config.llm_config.rope_scaling is not None
+            and self.config.llm_config.rope_scaling["type"] == "3D"
+        ):
+            position_ids, rope_deltas = self.get_rope_index(
+                input_ids,
+                image_token_id=self.config.llm_config.image_patch_token,
+                video_token_id=self.config.llm_config.image_patch_token,
+                image_start_token_id=self.config.llm_config.image_start_token,
+                video_start_token_id=self.config.llm_config.video_start_token,
+                image_grid_thw=None,
+                video_grid_thw=None,
+                attention_mask=attention_mask,
             )
-
-        image_embeds, video_embeds, audio_embeds, audio_embeds_lengths = None, None, None, None
-        if pixel_values is not None:
-            image_embeds = self.extract_image_feature(pixel_values, grid_thw=image_grid_thw)
-        if pixel_values_videos is not None:
-            video_embeds = self.extract_image_feature(pixel_values_videos, grid_thw=video_grid_thw)
-        if audio_feats is not None:
-            audio_embeds, audio_embeds_lengths = self.extract_audio_feature(
-                audio_feats, audio_feats_lengths, use_whisper_encoder=use_whisper_encoder
-            )
-
-        if (
-            image_embeds is None and video_embeds is None and audio_embeds is None
-        ) or input_ids.size(1) == 1:
-            words_embeddings = self.model.get_input_embeddings()(
-                input_ids.clip(0, self.model.get_input_embeddings().weight.shape[0] - 1)
-            )
-            audio_mask = None
-
+            self.rope_deltas = rope_deltas
         else:
-            words_embeddings, audio_mask = self.prompt_wrap_navit(
-                input_ids.clip(0, self.model.get_input_embeddings().weight.shape[0] - 1),
-                audio_embeds,
-                audio_embeds_lengths,
-                audio_placeholder_loc_lens,
-                None,  # noqa
-            )
+            rope_deltas = None
 
+        # Obtain LLM hidden states
         outputs = self.model(
-            input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
             inputs_embeds=words_embeddings,
             labels=labels,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-            image_mask=None,
-            audio_mask=audio_mask,
+            use_cache=False,
+            output_attentions=False,
+            output_hidden_states=True,
+            return_dict=True
+        )
+        llm_last_outputs = outputs.hidden_states[-1]
+        # Flow matching condition
+        condition = torch.zeros_like(audio_embeds)
+        for i in range(condition.size(0)):
+            condition[i, :audio_embeds_lengths[i]] = llm_last_outputs[i, placeholder_loc_lens[i][0][0]-1:placeholder_loc_lens[i][0][0]-1+placeholder_loc_lens[i][0][1]]
+        condition = condition.reshape(-1, 1, condition.size(-1))
+        condition_mask = length2attention_mask(audio_embeds_lengths)
+        condition_mask = condition_mask.reshape(-1, 1).expand(-1, self.patch_size)  # [B*patch_num, patch_size]
+
+        # Flow matching latent history and target
+        latent_history = latents.clone()[:, :-self.patch_size, :]
+        latent_history = F.pad(latent_history, pad=(0, 0, self.patch_size, 0))
+        latent_history = latent_history.reshape(-1, self.patch_size, latent_history.size(-1))
+        target = latents.clone().reshape(-1, self.patch_size, latents.size(-1))
+
+        # Flow matching loss
+        flow_loss = self.flowloss(
+            cond=condition,
+            target=target,
+            latent_history=latent_history,
+            mask=condition_mask,
+            patch_size=self.patch_size
         )
 
+        # Stop head loss
+        pred_stop_probs = self.stop_head(llm_last_outputs).transpose(1,2)
+        stop_loss = self.stop_loss_func(pred_stop_probs, stop_label)
+
         return BailingMMCausalLMOutputWithPast(
-            loss=outputs.loss,
-            logits=outputs.logits,
-            past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
+            flow_loss=flow_loss,
+            stop_loss=stop_loss[0],
+            stop_loss_likely=stop_loss[1]
         )
+
+    def prepare_inputs_for_generation(self):
+        # An empty function to be compatible with the PEFT library for LoRA training. This function is not used in practice.
+        pass
 
     @torch.no_grad()
     def generate(
@@ -438,7 +467,7 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
         audio_embeds, audio_embeds_lengths = None, None
 
         with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-            audio_embeds, audio_embeds_lengths = self.extract_audio_feature(
+            audio_embeds, audio_embeds_lengths, _ = self.extract_audio_feature(
                 waveform, waveform_length
             )
             words_embeddings, audio_mask = self.prompt_wrap_navit(
@@ -790,7 +819,7 @@ class BailingMMNativeForConditionalGeneration(PreTrainedModel):
                 step += 1
 
             edited_audio_latents = torch.cat(edited_audio_result, dim = 1)
-            edited_speech = self.audio.decode(edited_audio_latents)
+            edited_speech = self.audio.decode(edited_audio_latents)[0]
             torchaudio.save(output_wav_path, edited_speech.cpu()[0], sample_rate=sample_rate)
             edited_text = self.tokenizer.decode(edited_text_result)
             return edited_speech, edited_text

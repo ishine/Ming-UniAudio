@@ -1,5 +1,7 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
+
 
 class Solver:
     def __init__(self, func, y0, sigma=0.25, temperature=1.5) -> None:
@@ -66,6 +68,32 @@ class CFM(nn.Module):
     @property
     def device(self):
         return next(self.parameters()).device
+
+    def forward(
+        self,
+        cond,
+        target,
+        latent_history,
+        mask,
+        patch_size,
+    ):
+        x1 = target
+        batch, dtype = x1.shape[0], x1.dtype
+        x0 = torch.randn_like(x1)
+        time = torch.rand((batch,), dtype=dtype, device=self.device)
+        # sample xt (φ_t(x) in the paper)
+        t = time.unsqueeze(-1).unsqueeze(-1)
+        x = (1 - t) * x0 + t * x1
+        flow = x1 - x0
+
+        pred = self.model(x=x, t=time, c=cond, latent_history=latent_history, mask=mask.to(torch.bool))
+        pred = pred[:, -patch_size:, :]
+
+        loss = F.mse_loss(pred, flow, reduction="none")
+        mask = (mask == 1)
+        loss = loss[mask]
+
+        return loss.mean()
 
     @torch.no_grad()
     def sample(
