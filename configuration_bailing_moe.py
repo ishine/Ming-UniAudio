@@ -43,6 +43,7 @@ class BailingMoeConfig(PretrainedConfig):
         multi_gate=False,
         image_patch_token=126346,
         _attn_implementation="flash_attention_2",
+        use_grouped_gemm=False,
         **kwargs,
     ):
         self.num_hidden_layers = num_hidden_layers
@@ -79,5 +80,6 @@ class BailingMoeConfig(PretrainedConfig):
         self.output_router_logits = output_router_logits
         self.multi_gate = multi_gate
         self.image_patch_token = image_patch_token
+        self.use_grouped_gemm = use_grouped_gemm
         super().__init__(pad_token_id=pad_token_id, tie_word_embeddings=tie_word_embeddings, **kwargs)
         self._attn_implementation = _attn_implementation

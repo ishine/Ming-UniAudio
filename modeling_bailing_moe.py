@@ -27,7 +27,9 @@ import torch.nn.functional as F
 import torch.utils.checkpoint
 from torch import nn
 from torch.nn import CrossEntropyLoss
+import torch.nn.init as init
 
+from tqdm import tqdm
 from transformers.activations import ACT2FN
 from transformers.cache_utils import Cache, DynamicCache
 from transformers.modeling_attn_mask_utils import (
@@ -355,6 +357,49 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section=[16, 24, 24], 
     return q_embed, k_embed
 
 
+class BailingMoeGroupedLinear(nn.Module):
+    def __init__(self, num_groups: int, in_features: int, out_features: int, bias: bool = False):
+        super().__init__()
+        self.num_groups = num_groups
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = nn.Parameter(torch.empty(num_groups, out_features, in_features))
+        if bias:
+            self.bias = nn.Parameter(torch.empty(num_groups, out_features))
+        else:
+            self.register_parameter("bias", None)
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        if self.bias is not None:
+            fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+            init.uniform_(self.bias, -bound, bound)
+    
+    def forward(self, x):
+        raise NotImplementedError("`GroupedLinear` is a weight container for use with specialized kernels.")
+
+    def extra_repr(self) -> str:
+        return f"num_groups={self.num_groups}, in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}"
+
+
+class BailingMoeGroupedMLP(nn.Module):
+    def __init__(self, config: BailingMoeConfig, intermediate_size: int):
+        super().__init__()
+        self.config = config
+        self.hidden_size = config.hidden_size
+        self.intermediate_size = intermediate_size
+
+        self.gate_proj = BailingMoeGroupedLinear(self.config.num_experts, self.hidden_size, self.intermediate_size, bias=False)
+        self.up_proj = BailingMoeGroupedLinear(self.config.num_experts, self.hidden_size, self.intermediate_size, bias=False)
+        self.down_proj = BailingMoeGroupedLinear(self.config.num_experts, self.intermediate_size, self.hidden_size, bias=False)
+        self.act_fn = ACT2FN[config.hidden_act]
+
+    def forward(self, x):
+        raise NotImplementedError("The MoE computation is performed in the parent `DeepseekV3MoE` module.")
+
+
 class BailingMoeMLP(nn.Module):
     def __init__(self, config: BailingMoeConfig, intermediate_size: int):
         super().__init__()
@@ -415,6 +460,7 @@ class BailingMoeSparseMoeBlock(nn.Module):
     def __init__(self, config: BailingMoeConfig):
         super().__init__()
         self.config = config
+        self.use_grouped_gemm = config.use_grouped_gemm
         self.num_experts_per_tok = config.num_experts_per_tok
         self._setup_experts()
         self.multi_gate = config.multi_gate
@@ -428,12 +474,15 @@ class BailingMoeSparseMoeBlock(nn.Module):
             )
 
     def _setup_experts(self):
-        self.experts = nn.ModuleList(
-            [
-                BailingMoeMLP(config=self.config, intermediate_size=self.config.moe_intermediate_size)
-                for _ in range(self.config.num_experts)
-            ]
-        )
+        if self.use_grouped_gemm:
+            self.experts = BailingMoeGroupedMLP(config=self.config, intermediate_size=self.config.moe_intermediate_size)
+        else:
+            self.experts = nn.ModuleList(
+                [
+                    BailingMoeMLP(config=self.config, intermediate_size=self.config.moe_intermediate_size)
+                    for _ in range(self.config.num_experts)
+                ]
+            )
 
     def create_mask(self, device, start_indices, end_indices, indices):
         start_indices = torch.tensor(start_indices, device=device).view(-1, 1)
@@ -477,17 +526,37 @@ class BailingMoeSparseMoeBlock(nn.Module):
 
         else:
             topk_idx, topk_weight, router_logits = self.gate(hidden_states)
-        hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
-        flat_topk_idx = topk_idx.view(-1)
-        if self.training:
-            hidden_states = hidden_states.repeat_interleave(self.num_experts_per_tok, dim=0)
-            y = torch.empty_like(hidden_states)
-            for i, expert in enumerate(self.experts):
-                y[flat_topk_idx == i] = expert(hidden_states[flat_topk_idx == i])
-            y = (y.view(*topk_weight.shape, -1) * topk_weight.unsqueeze(-1)).sum(dim=1)
-            y = y.to(hidden_states.dtype).view(bsz, seq_len, h)
+        # hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
+        # flat_topk_idx = topk_idx.view(-1)
+
+        if self.use_grouped_gemm:
+            import grouped_gemm.ops as ops
+            residuals = hidden_states
+            orig_shape = hidden_states.shape
+            flat_hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
+            topk_idx = topk_idx.to(torch.int32)
+            batch_sizes = torch.bincount(topk_idx.flatten().cpu(), minlength=self.config.num_experts)
+            permuted_hidden_states, row_id_map = ops.permute(flat_hidden_states, topk_idx)
+            permuted_hidden_states = permuted_hidden_states.to(torch.bfloat16)
+            gate_out = ops.gmm(permuted_hidden_states, self.experts.gate_proj.weight, batch_sizes, trans_b=True)
+            up_out = ops.gmm(permuted_hidden_states, self.experts.up_proj.weight, batch_sizes, trans_b=True)
+            intermediate_out = self.experts.act_fn(gate_out) * up_out
+            expert_out = ops.gmm(intermediate_out, self.experts.down_proj.weight, batch_sizes, trans_b=True)
+            y = ops.unpermute(expert_out, row_id_map, topk_weight)
+            y = y.view(*orig_shape)
         else:
-            y = self.moe_infer(hidden_states, topk_idx, topk_weight).view(bsz, seq_len, h)
+            hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
+            flat_topk_idx = topk_idx.view(-1)
+            if self.training:
+                hidden_states = hidden_states.repeat_interleave(self.num_experts_per_tok, dim=0)
+                y = torch.empty_like(hidden_states)
+                for i, expert in enumerate(self.experts):
+                    y[flat_topk_idx == i] = expert(hidden_states[flat_topk_idx == i])
+                y = (y.view(*topk_weight.shape, -1) * topk_weight.unsqueeze(-1)).sum(dim=1)
+                y = y.to(hidden_states.dtype).view(bsz, seq_len, h)
+            else:
+                y = self.moe_infer(hidden_states, topk_idx, topk_weight).view(bsz, seq_len, h)
+
         if self.config.num_shared_experts is not None:
             y = y + self.shared_experts(identity)
         return y, (router_logits.view(bsz, seq_len, -1), topk_idx.view(bsz, seq_len, -1))
@@ -1277,6 +1346,48 @@ class BailingMoeModel(BailingMoePreTrainedModel):
     def set_input_embeddings(self, value):
         self.word_embeddings = value
 
+    def _fuse_experts(self):
+        for layer in tqdm(self.layers, desc="Fusing experts"):
+            if isinstance(layer.mlp, BailingMoeSparseMoeBlock) and not layer.mlp.use_grouped_gemm:
+                grouped_experts = BailingMoeGroupedMLP(config=layer.mlp.config, intermediate_size=layer.mlp.config.moe_intermediate_size)
+                
+                gate_weights = torch.stack([expert.gate_proj.weight for expert in layer.mlp.experts])
+                grouped_experts.gate_proj.weight.data = gate_weights
+                del gate_weights
+                
+                up_weights = torch.stack([expert.up_proj.weight for expert in layer.mlp.experts])
+                grouped_experts.up_proj.weight.data = up_weights
+                del up_weights
+                
+                down_weights = torch.stack([expert.down_proj.weight for expert in layer.mlp.experts])
+                grouped_experts.down_proj.weight.data = down_weights
+                del down_weights
+
+                layer.mlp.experts = grouped_experts
+                layer.mlp.use_grouped_gemm = True
+    
+    def _unfuse_experts(self):
+        for layer in tqdm(self.layers, desc="Unfusing experts"):
+            if isinstance(layer.mlp, BailingMoeSparseMoeBlock) and layer.mlp.use_grouped_gemm:
+                grouped_experts = layer.mlp.experts
+                gate_weights = grouped_experts.gate_proj.weight.data
+                up_weights = grouped_experts.up_proj.weight.data
+                down_weights = grouped_experts.down_proj.weight.data
+
+                config = layer.mlp.config
+                num_experts = config.num_experts
+                experts = nn.ModuleList(
+                    [BailingMoeMLP(config, intermediate_size=config.moe_intermediate_size) for _ in range(num_experts)]
+                )
+
+                for i in range(num_experts):
+                    experts[i].gate_proj.weight.data = gate_weights[i]
+                    experts[i].up_proj.weight.data = up_weights[i]
+                    experts[i].down_proj.weight.data = down_weights[i]
+
+                layer.mlp.experts = experts
+                layer.mlp.use_grouped_gemm = False
+
     @add_start_docstrings_to_model_forward(BAILINGMOE_INPUTS_DOCSTRING)
     def forward(
         self,
@@ -1478,6 +1589,19 @@ class BailingMoeForCausalLM(BailingMoePreTrainedModel, GenerationMixin):
         else:
             logits = self.lm_head(hidden_states)
         return logits
+
+    def fuse_experts(self):
+        import importlib.util
+
+        if importlib.util.find_spec("grouped_gemm") is None:
+            raise ImportError(
+                "Please install grouped_gemm to use use_grouped_gemm=True. "
+                "You can install it with `pip install git+https://github.com/fanshiqing/grouped_gemm@main`"
+            )
+        self.model._fuse_experts()
+
+    def unfuse_experts(self):
+        self.model._unfuse_experts()
 
     @add_start_docstrings_to_model_forward(BAILINGMOE_INPUTS_DOCSTRING)
     @replace_return_docstrings(output_type=MoeCausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)

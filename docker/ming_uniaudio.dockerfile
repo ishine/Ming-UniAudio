@@ -45,7 +45,7 @@ ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 RUN pip install --no-cache-dir --no-build-isolation \
     tokenizers \
     # grouped_gemm==0.1.4 \
-    peft==0.13.2 \
+    peft==0.17.1 \
     diffusers==0.33.0 \
     decord==0.6.0 \
     hyperpyyaml==1.2.2 \
@@ -54,7 +54,8 @@ RUN pip install --no-cache-dir --no-build-isolation \
     x_transformers \
     torchdiffeq \
     torchtune \
-    torchao
+    torchao \
+    accelerate==1.3.0
 
 ARG FLASH_ATTN_WHEEL=flash_attn-2.7.0.post1+cu12torch2.5cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
 ARG FLASH_ATTN_URL=https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.0.post1/${FLASH_ATTN_WHEEL}

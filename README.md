@@ -4,7 +4,7 @@
     <img src="./figures/ant-bailing.png" width="100"/>
 <p>
 
-<p align="center">📖<a href="https://xqacmer.github.io/Ming-Unitok-Audio.github.io/">Project Page</a> ｜🤗 <a href="https://huggingface.co/inclusionAI/Ming-UniAudio-16B-A3B">Hugging Face</a>｜ 🤖 <a href="https://modelscope.cn/models/inclusionAI/Ming-UniAudio-16B-A3B">ModelScope</a>
+<p align="center">📝<a href="assets/TR-Ming-UniAudio.pdf">Technical Report</a> ｜🌐<a href="https://xqacmer.github.io/Ming-Unitok-Audio.github.io/">Project Page</a> ｜🤗 <a href="https://huggingface.co/inclusionAI/Ming-UniAudio-16B-A3B">Hugging Face</a>｜ 🤖 <a href="https://modelscope.cn/models/inclusionAI/Ming-UniAudio-16B-A3B">ModelScope</a>
 
 
 
@@ -14,7 +14,7 @@ Ming-UniAudio is a novel framework that unifies speech understanding, generation
 
 - 🔥 First unified continuous speech tokenizer for both understanding and generation tasks: [MingTok-Audio](https://github.com/inclusionAI/MingTok-Audio)
 - 🔥 First Speech LLM  with unifed continuous tokenizer for both understanding and generation: [Ming-UniAudio](https://huggingface.co/inclusionAI/Ming-UniAudio-16B-A3B)
-- 🔥 First universal free-form speech editing model for various semantic and acoustic editing task without any temporal regime: [Ming-UniAudio-Edit](https://huggingface.co/inclusionAI/Ming-UniAudio-16B-A3B-Edit)
+- 🔥 First universal free-form speech editing model for various semantic and acoustic editing task without any timestamp condition: [Ming-UniAudio-Edit](https://huggingface.co/inclusionAI/Ming-UniAudio-16B-A3B-Edit)
 - 🔥 First benchmark for free-form speech editing: [Ming-Freeform-Audio-Edit-Benchmark](https://huggingface.co/datasets/inclusionAI/Ming-Freeform-Audio-Edit-Benchmark)
 
 <p align="center">
@@ -22,7 +22,8 @@ Ming-UniAudio is a novel framework that unifies speech understanding, generation
 <p>
 
 ## 📌 Updates
-
+* [2025.10.28] 🔥 We release [Technical Report](assets/TR-Ming-UniAudio.pdf).
+* [2025.10.27] 🔥 We release [SFT recipes](sft/README.md) of Speech Generation.
 * [2025.09.30] 🔥 We release [Ming-UniAudio](https://xqacmer.github.io/Ming-Unitok-Audio.github.io/) with significant improvements across speech understanding, generation, and free-form editing tasks.
 
 
@@ -681,18 +682,18 @@ You can set up the environment using Docker in two ways.
 - Option 1: Pull from Docker Hub (**Recommended**)
 ```bash
 # 1. Pull the pre-built image
-docker pull yongjielv/ming_uniaudio:v1.0
+docker pull yongjielv/ming_uniaudio:v1.1
 
 # 2. Run the container
-docker run -it --gpus all yongjielv/ming_uniaudio:v1.0 /bin/bash
+docker run -it --gpus all yongjielv/ming_uniaudio:v1.1 /bin/bash
 ```
 - Option 2: Build from Source
 ``` bash
 # 1. Build the image
-docker build -t ming-uniaudio:v1.0 -f ./docker/ming_uniaudio.dockerfile .
+docker build -t ming-uniaudio:v1.1 -f ./docker/ming_uniaudio.dockerfile .
 
 # 2. Run the container
-docker run -it --gpus all ming-uniaudio:v1.0 /bin/bash
+docker run -it --gpus all ming-uniaudio:v1.1 /bin/bash
 ```
 
 
@@ -716,13 +717,14 @@ ln -s /path/to/inclusionAI/Ming-UniAudio-16B-A3B inclusionAI/Ming-UniAudio-16B-A
 
 Step 3 - Enter the code directory, you can refer to the following codes to run the Ming-UniAudio model.
 ```shell
-jupyter notebook cookbooks/demo.ipynb
+python3 cookbooks/test.py
 ```
 
-We also provide a simple example on the usage of this repo. For detailed usage, please refer to [demobook.ipynb](https://github.com/inclusionAI/Ming-UniAudio/blob/main/cookbooks/demo.ipynb).
+For detailed usage, please refer to [demo.ipynb](cookbooks/demo.ipynb).
 
 ```python
 import warnings
+from peft import PeftModel
 import torch
 from transformers import AutoProcessor
 import os
@@ -752,13 +754,20 @@ seed_everything()
 warnings.filterwarnings("ignore")
 
 class MingAudio:
-    def __init__(self, model_path, device="cuda:0"):
+    def __init__(self, model_path, lora_path=None, device="cuda:0", use_grouped_gemm=False):
         self.device = device
         self.model = BailingMMNativeForConditionalGeneration.from_pretrained(
             model_path,
             torch_dtype=torch.bfloat16,
             low_cpu_mem_usage=True,
-        ).eval().to(torch.bfloat16).to(self.device)
+        ).to(self.device)
+
+        if use_grouped_gemm and not self.model.config.llm_config.use_grouped_gemm:
+            self.model.model.fuse_experts()
+
+        if lora_path is not None:
+            self.model = PeftModel.from_pretrained(self.model, lora_path)
+        self.model = self.model.eval().to(torch.bfloat16).to(self.device)
         self.processor = AutoProcessor.from_pretrained(".", trust_remote_code=True)
         self.tokenizer = self.processor.tokenizer
         self.sample_rate = self.processor.audio_processor.sample_rate
@@ -766,12 +775,8 @@ class MingAudio:
         self.normalizer = self.init_tn_normalizer(tokenizer=self.tokenizer)
 
     def init_tn_normalizer(self, config_file_path=None, tokenizer=None):
-
         if config_file_path is None:
-            default_config_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 
-                "sentence_manager/default_config.yaml"
-            )
+            default_config_path = "sentence_manager/default_config.yaml"
             config_file_path = default_config_path
         with open(config_file_path, 'r') as f:
             self.sentence_manager_config = yaml.safe_load(f)
@@ -906,7 +911,8 @@ if __name__ == "__main__":
     )
 
     # Edit
-    # model = MingAudio("inclusionAI/Ming-UniAudio-16B-A3B-Edit")
+    del model
+    model = MingAudio("inclusionAI/Ming-UniAudio-16B-A3B-Edit")
     messages = [
         {
             "role": "HUMAN",
@@ -925,6 +931,9 @@ if __name__ == "__main__":
 ```
 
 Note: We test the examples on hardware of NVIDIA H800-80GB/H20-96G with CUDA 12.4.
+
+## SFT
+We have open-sourced the Supervised Fine-Tuning (SFT) part for speech generation, which supports both full-parameter and LoRA training. Please follow the [recipes](sft/README.md) to start training.
 
 
 ## Citation
